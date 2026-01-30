@@ -1,0 +1,16 @@
+{
+  "primary_domains": ["tech", "finance", "politics"],
+  "regions": ["US", "CN", "GLOBAL"],
+  "language_output": "bilingual",
+  "daily_digest_items": 12,
+  "low_credibility_threshold": 50,
+  "ranking_weights": {
+    "relevance": 0.4,
+    "recency": 0.2,
+    "credibility": 0.25,
+    "engagement": 0.15
+  },
+  "exclude_keywords": ["celebrity", "gossip", "complaint"],
+  "include_keywords": ["AI", "semiconductor", "policy", "rates", "election"],
+  "timezone": "America/Los_Angeles"
+}

@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Daily News Agent — Tech & Global Intelligence</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <!-- Background -->
+    <div id="grid-background" class="grid-background-container"></div>
+
+    <!-- Header -->
+    <header class="hero">
+      <div class="hero-content">
+        <h1>Daily News Agent</h1>
+        <p class="subhead">Tech & Global Intelligence Aggregator</p>
+        <p class="description">
+          AI-powered news digest with credibility signals and bilingual summaries
+        </p>
+        <div class="meta">
+          <span class="pulse"></span>
+          <span id="digest-date">Loading...</span>
+          <span>•</span>
+          <span id="update-time">Updated at...</span>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <!-- Chat Section at Top (like vcnews.io) -->
+      <section class="section chat-section" id="chat-section">
+        <div class="chat-container-main">
+          <div class="chat-header">
+            <div class="chat-header-title">
+              <span class="chat-status"></span>
+              <h2>News Assistant</h2>
+            </div>
+            <span class="chat-subtitle">Ask about today's news...</span>
+          </div>
+          <div class="chat-messages" id="chat-messages">
+            <div class="chat-welcome">
+              <div class="chat-welcome-icon">🤖</div>
+              <h4>Ready to discuss today's news</h4>
+              <p>Ask me about any story, request analysis, or explore implications</p>
+            </div>
+          </div>
+          <div class="chat-input-wrapper">
+            <div class="chat-input-container">
+              <textarea 
+                class="chat-input" 
+                id="chat-input" 
+                placeholder="Ask about today's news..."
+                rows="1"
+              ></textarea>
+              <button class="chat-send-btn" id="chat-send-btn" aria-label="Send message">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="22" y1="2" x2="11" y2="13"></line>
+                  <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Source Filter Tabs -->
+      <section class="section filter-section">
+        <div class="filter-tabs" id="filter-tabs">
+          <button class="filter-tab active" data-source="all">
+            <span class="tab-icon">📰</span> All News
+          </button>
+          <button class="filter-tab" data-source="TechCrunch">
+            <span class="tab-icon">🚀</span> TechCrunch
+          </button>
+          <button class="filter-tab" data-source="Hacker News">
+            <span class="tab-icon">🟠</span> Hacker News
+          </button>
+          <button class="filter-tab" data-source="CNN">
+            <span class="tab-icon">📺</span> CNN
+          </button>
+          <button class="filter-tab" data-source="iNewsweek">
+            <span class="tab-icon">🌏</span> iNewsweek
+          </button>
+        </div>
+        <div class="filter-info">
+          <span id="item-count">0 items</span>
+        </div>
+      </section>
+
+      <!-- News Grid -->
+      <section class="section news-section">
+        <div class="card-grid" id="news-grid"></div>
+      </section>
+    </main>
+
+    <footer>
+      <p>Local-first • File-based • Built for focused reading</p>
+    </footer>
+
+    <!-- Background animation disabled for clean UI -->
+    <!-- <script type="module" src="/static/dist/main.js"></script> --></script>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

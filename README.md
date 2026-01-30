@@ -41,21 +41,35 @@ OPENAI_API_KEY=your_key_here
 
 5) Review and edit `config/sources.yml` and `config/preferences.json`.
 
-6) Install Node.js dependencies and build the frontend:
+## Quick Start
+
+Run the complete pipeline and start the server:
 
 ```bash
-npm install
-npm run build
+./run.sh
 ```
 
-## Run daily pipeline
+This will:
+1. Fetch news from all sources
+2. Process and analyze articles with AI (with progress bar)
+3. Start the web server at http://127.0.0.1:8000
+
+Or start just the web server (using existing data):
+
 ```bash
-python pipeline/run_daily.py
+./start.sh
 ```
 
-## Run local web app
+## Manual Commands
+
+Run daily pipeline:
 ```bash
-python app.py
+.venv/bin/python3 pipeline/run_daily.py
+```
+
+Run local web app:
+```bash
+.venv/bin/python3 app.py
 ```
 
 Open `http://127.0.0.1:8000`.
@@ -64,47 +78,18 @@ Open `http://127.0.0.1:8000`.
 Add a cron entry (example):
 
 ```bash
-0 8 * * * cd /Users/jameshuang/Documents/test-01-29-2026 && /path/to/python pipeline/run_daily.py >> logs/cron.log 2>&1
+0 8 * * * cd /path/to/daily-news-agent && /path/to/.venv/bin/python3 pipeline/run_daily.py >> logs/cron.log 2>&1
 ```
 
-## Data layout
-- `data/raw/YYYY-MM-DD/` raw source payloads
-- `data/processed/YYYY-MM-DD/` normalized items
-- `data/digests/YYYY-MM-DD/` daily outputs
-- `data/digests/latest.json` latest digest for UI
+## License
 
-## Customizing the Galaxy Background
+This project is licensed under a **Non-Commercial License**.
 
-The Galaxy background is built with OGL and can be customized in `src/main.js`. Available options:
+**⚠️ Commercial use is NOT permitted.**
 
-```javascript
-{
-  mouseRepulsion: true,        // Enable mouse repulsion effect
-  mouseInteraction: true,      // Enable mouse interaction
-  density: 1,                  // Star density (0.5 - 2.0)
-  glowIntensity: 0.3,         // Star glow intensity (0 - 1)
-  saturation: 0,              // Color saturation (0 - 1)
-  hueShift: 140,              // Base hue (0 - 360)
-  twinkleIntensity: 0.3,      // Star twinkle effect (0 - 1)
-  rotationSpeed: 0.1,         // Scene rotation speed
-  repulsionStrength: 2,       // Mouse repulsion strength
-  starSpeed: 0.5,             // Star movement speed
-  speed: 1                    // Overall animation speed
-}
-```
+- ✅ Personal use
+- ✅ Educational use
+- ✅ Research use
+- ❌ Commercial use (selling, revenue generation, commercial services)
 
-After making changes, rebuild:
-
-```bash
-npm run build
-```
-
-For development with hot reload:
-
-```bash
-npm run dev
-```
-
-## Notes
-- Rednote/Xiaohongshu ingestion is intentionally deferred. The pipeline is
-  designed so you can add it later by extending the source registry.
+For commercial licensing, please contact the author. See the [LICENSE](LICENSE) file for full details.

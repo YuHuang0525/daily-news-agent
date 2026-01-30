@@ -50,7 +50,22 @@ def deduplicate(items: List[Dict]) -> List[Dict]:
 def enrich_items(items: List[Dict], low_threshold: int) -> List[Dict]:
     items = add_corroboration(items)
     enriched = []
-    for item in items:
+    total = len(items)
+    
+    print(f"\n🔄 Processing {total} articles with AI analysis...")
+    print("━" * 60)
+    
+    for idx, item in enumerate(items, 1):
+        # Progress bar
+        progress = idx / total
+        bar_length = 40
+        filled = int(bar_length * progress)
+        bar = "█" * filled + "░" * (bar_length - filled)
+        percent = int(progress * 100)
+        
+        # Print progress bar on same line
+        print(f"\r[{bar}] {percent}% ({idx}/{total}) - {item.get('title', 'Processing')[:40]}...", end="", flush=True)
+        
         score = compute_credibility(item["source_credibility"], item["corroboration"])
         label = credibility_label(score)
         summary = summarize_bilingual(item["text"][:4000])
@@ -70,6 +85,12 @@ def enrich_items(items: List[Dict], low_threshold: int) -> List[Dict]:
             item["intent_en"] = intent.get("intent_en")
             item["intent_zh"] = intent.get("intent_zh")
         enriched.append(item)
+    
+    # Print newline after progress bar
+    print(f"\r[{'█' * bar_length}] 100% ({total}/{total}) - Complete!{' ' * 50}")
+    print("━" * 60)
+    print(f"✅ Successfully processed {total} articles\n")
+    
     return enriched
 
 

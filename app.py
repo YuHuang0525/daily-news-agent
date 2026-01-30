@@ -270,4 +270,23 @@ What would you like to explore?"""
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=8000, debug=True)
+    import sys
+    
+    # Suppress Flask startup messages in debug mode
+    import logging
+    log = logging.getLogger('werkzeug')
+    log.setLevel(logging.ERROR)
+    
+    print("\n" + "=" * 70)
+    print("🚀 Daily News Agent - Server Starting")
+    print("=" * 70)
+    print(f"\n✅ Server is running at: \033[1;36mhttp://127.0.0.1:8000\033[0m")
+    print(f"\n💡 Click the link above or copy to your browser")
+    print(f"⌨️  Press CTRL+C to stop the server\n")
+    print("=" * 70 + "\n")
+    
+    try:
+        app.run(host="127.0.0.1", port=8000, debug=True, use_reloader=False)
+    except KeyboardInterrupt:
+        print("\n\n👋 Server stopped. Goodbye!")
+        sys.exit(0)

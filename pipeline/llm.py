@@ -7,7 +7,9 @@ import re
 from openai import OpenAI
 
 
-DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+def get_default_model() -> str:
+    # Read at call-time so `.env` loaded later (e.g. in `pipeline/run_daily.py`) is respected.
+    return os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
 
 def build_prompt(text: str) -> str:
@@ -50,7 +52,7 @@ def summarize_bilingual(text: str) -> Dict[str, str]:
 
     client = OpenAI(api_key=api_key)
     response = client.chat.completions.create(
-        model=DEFAULT_MODEL,
+        model=get_default_model(),
         messages=[{"role": "user", "content": build_prompt(text)}],
         temperature=0.2,
     )
@@ -87,7 +89,7 @@ def analyze_intent(text: str) -> Dict[str, str]:
 
     client = OpenAI(api_key=api_key)
     response = client.chat.completions.create(
-        model=DEFAULT_MODEL,
+        model=get_default_model(),
         messages=[{"role": "user", "content": build_intent_prompt(text)}],
         temperature=0.3,
     )

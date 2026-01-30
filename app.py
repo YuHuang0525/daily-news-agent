@@ -10,11 +10,18 @@ try:
 except ImportError:
     pass
 
+# Model selection (read from environment; defaults kept for backwards compatibility)
+DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+
 ROOT_DIR = Path(__file__).resolve().parent
 DATA_DIR = ROOT_DIR / "data" / "digests"
 PROCESSED_DIR = ROOT_DIR / "data" / "processed"
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
+
+def _active_openai_model() -> str:
+    # Read at call-time so `.env` or process env changes are reflected.
+    return os.getenv("OPENAI_MODEL", DEFAULT_MODEL)
 
 
 @app.route("/")
@@ -101,6 +108,26 @@ def all_items():
     return jsonify({"timestamp": None, "date": "", "items": []})
 
 
+@app.route("/api/model")
+def model_info():
+    """Return the exact OpenAI model configured for this server."""
+    sdk_version = None
+    try:
+        import openai as openai_module
+
+        sdk_version = getattr(openai_module, "__version__", None)
+    except Exception:
+        pass
+
+    return jsonify(
+        {
+            "openai_model": _active_openai_model(),
+            "openai_sdk_version": sdk_version,
+            "has_openai_api_key": bool(os.getenv("OPENAI_API_KEY")),
+        }
+    )
+
+
 @app.route("/api/chat", methods=["POST"])
 def chat():
     """Handle chat messages with AI-powered responses.
@@ -112,6 +139,26 @@ def chat():
     message = data.get("message", "")
     history = data.get("history", [])
     digest_context = data.get("digest_context", {})
+
+    # If the user asks which model is being used, answer deterministically
+    # from server config (don't call the LLM for this).
+    msg_lower = (message or "").lower().strip()
+    if any(
+        phrase in msg_lower
+        for phrase in [
+            "what model are you using",
+            "which model are you using",
+            "what model",
+            "which model",
+            "openai model",
+        ]
+    ):
+        return jsonify(
+            {
+                "reply": f"This server is configured to use: {_active_openai_model()} (from OPENAI_MODEL).",
+                "model": _active_openai_model(),
+            }
+        )
     
     # Try to use OpenAI if available
     openai_key = os.getenv("OPENAI_API_KEY")
@@ -154,15 +201,29 @@ Help users understand these stories, their implications, and connections. Be con
             # Add current message
             messages.append({"role": "user", "content": message})
             
-            response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=messages,
-                max_tokens=500,
-                temperature=0.7,
-            )
+            model = _active_openai_model()
+            token_limit = 500
+
+            # Some newer models (e.g. gpt-5.*) reject `max_tokens` and require
+            # `max_completion_tokens`, but older SDK versions may not expose it
+            # as a typed kwarg. `extra_body` passes it through safely.
+            if model.startswith("gpt-5"):
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    temperature=0.7,
+                    extra_body={"max_completion_tokens": token_limit},
+                )
+            else:
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    max_tokens=token_limit,
+                    temperature=0.7,
+                )
             
             reply = response.choices[0].message.content
-            return jsonify({"reply": reply})
+            return jsonify({"reply": reply, "model": model})
             
         except Exception as e:
             # Fall through to fallback response
@@ -170,7 +231,7 @@ Help users understand these stories, their implications, and connections. Be con
     
     # Fallback intelligent response without API
     reply = generate_fallback_response(message, digest_context)
-    return jsonify({"reply": reply})
+    return jsonify({"reply": reply, "model": _active_openai_model()})
 
 
 def generate_fallback_response(message: str, digest_context: dict) -> str:

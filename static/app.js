@@ -64,20 +64,39 @@ const createCard = (item, index) => {
   card.dataset.source = item.source || "";
 
   const credClass = item.credibility_label || "medium";
-  const sourceInitials = (item.source || "N/A").substring(0, 2).toUpperCase();
+  const sourceName = item.source || "Unknown";
+  
+  // Map source names to logo filenames
+  const sourceLogos = {
+    "TechCrunch": "techcrunch.png",
+    "Hacker News": "hackernews.png",
+    "CNN": "cnn.png",
+    "iNewsweek": "inewsweek.png",
+    "Washington Post": "wapo.png"
+  };
+  
+  const logoFile = sourceLogos[sourceName];
+  const sourceIconHTML = logoFile 
+    ? `<img src="/static/icons/${logoFile}" alt="${sourceName}" class="source-logo" />`
+    : `<div class="source-icon-text">${sourceName.substring(0, 2).toUpperCase()}</div>`;
 
   const tags = (item.tags || [])
     .slice(0, 3)
     .map((tag) => `<span class="tag">${escapeHtml(tag)}</span>`)
     .join("");
 
+  // Only show badge for low credibility
+  const credBadgeHTML = credClass === 'low' 
+    ? `<span class="cred-badge ${credClass}">${credClass}</span>`
+    : '';
+
   card.innerHTML = `
     <div class="card-header">
       <div class="card-source">
-        <div class="source-icon">${sourceInitials}</div>
+        ${sourceIconHTML}
         <span class="source-name">${escapeHtml(item.source || "Unknown")}</span>
       </div>
-      <span class="cred-badge ${credClass}">${credClass}</span>
+      ${credBadgeHTML}
     </div>
     <div class="card-content">
       <div class="card-title-row">

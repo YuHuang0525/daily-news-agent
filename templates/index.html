@@ -46,7 +46,9 @@
           </div>
           <div class="chat-messages" id="chat-messages">
             <div class="chat-welcome">
-              <div class="chat-welcome-icon">🤖</div>
+              <div class="chat-welcome-icon">
+                <img src="/static/icons/robot_icon.png" alt="AI Assistant" class="chat-robot-icon" />
+              </div>
               <h4>Ready to discuss today's news</h4>
               <p>Ask me about any story, request analysis, or explore implications</p>
             </div>
@@ -77,16 +79,24 @@
             <span class="tab-icon">📰</span> All News
           </button>
           <button class="filter-tab" data-source="TechCrunch">
-            <span class="tab-icon">🚀</span> TechCrunch
+            <img src="/static/icons/techcrunch.png" alt="TechCrunch" class="tab-icon-img" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';" />
+            <span class="tab-icon-fallback" style="display:none;">🚀</span>
+            <span class="tab-label">TechCrunch</span>
           </button>
           <button class="filter-tab" data-source="Hacker News">
-            <span class="tab-icon">🟠</span> Hacker News
+            <img src="/static/icons/hackernews.png" alt="Hacker News" class="tab-icon-img" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';" />
+            <span class="tab-icon-fallback" style="display:none;">🟠</span>
+            <span class="tab-label">Hacker News</span>
           </button>
           <button class="filter-tab" data-source="CNN">
-            <span class="tab-icon">📺</span> CNN
+            <img src="/static/icons/cnn.png" alt="CNN" class="tab-icon-img" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';" />
+            <span class="tab-icon-fallback" style="display:none;">📺</span>
+            <span class="tab-label">CNN</span>
           </button>
           <button class="filter-tab" data-source="iNewsweek">
-            <span class="tab-icon">🌏</span> iNewsweek
+            <img src="/static/icons/inewsweek.png" alt="iNewsweek" class="tab-icon-img" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';" />
+            <span class="tab-icon-fallback" style="display:none;">🌏</span>
+            <span class="tab-label">iNewsweek</span>
           </button>
         </div>
         <div class="filter-info">

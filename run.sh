@@ -22,7 +22,7 @@ fi
 # Step 1: Run the daily pipeline
 echo "📰 Step 1: Fetching and processing news..."
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-.venv/bin/python3 pipeline/run_daily.py
+PIPELINE_MAX_CONCURRENCY=5 .venv/bin/python3 pipeline/run_daily.py
 
 if [ $? -eq 0 ]; then
     echo ""

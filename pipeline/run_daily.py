@@ -1,5 +1,7 @@
 import json
 import sys
+import os
+import asyncio
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -13,6 +15,7 @@ from pipeline.process import (
     build_digest,
     deduplicate,
     enrich_items,
+    enrich_items_async,
     normalize_item,
     render_digest_markdown,
     save_digest,
@@ -28,49 +31,83 @@ from pipeline.utils import (
 )
 
 
-def run():
+async def _fetch_one_source(source, sem: asyncio.Semaphore):
+    async with sem:
+        items = await asyncio.to_thread(fetch_source, source)
+        return source, items or []
+
+
+async def run_async():
     load_dotenv()
     sources = [s for s in load_sources() if s.get("enabled")]
     prefs = load_preferences()
     date_str = today_date_str()
 
-    raw_dir = DATA_DIR / "raw" / date_str
-    processed_dir = DATA_DIR / "processed" / date_str
-    digest_dir = DATA_DIR / "digests" / date_str
-    latest_path = DATA_DIR / "digests" / "latest.json"
+    max_concurrency = int(
+        os.getenv("PIPELINE_MAX_CONCURRENCY", prefs.get("max_concurrency", 3))
+    )
+    max_concurrency = max(1, max_concurrency)
+
+    # Allow running the pipeline in an isolated output folder for testing, so existing
+    # fetched/processed data is not affected.
+    base_data_dir = Path(os.getenv("PIPELINE_DATA_DIR", str(DATA_DIR)))
+
+    raw_dir = base_data_dir / "raw" / date_str
+    processed_dir = base_data_dir / "processed" / date_str
+    digest_dir = base_data_dir / "digests" / date_str
+    latest_path = base_data_dir / "digests" / "latest.json"
 
     ensure_dir(raw_dir)
     ensure_dir(processed_dir)
     ensure_dir(digest_dir)
 
     all_items = []
+    sem = asyncio.Semaphore(max_concurrency)
+    tasks = []
     for source in sources:
-        print(f"📰 Fetching {source['name']}...")
+        print(f"📰 Queued {source['name']}...")
+        tasks.append(asyncio.create_task(_fetch_one_source(source, sem)))
+
+    for t in asyncio.as_completed(tasks):
         try:
-            items = fetch_source(source)
-            if items:
-                save_raw_items(raw_dir, source["name"], items)
-                for item in items:
-                    all_items.append(normalize_item(source, item))
-                print(f"✅ {source['name']}: {len(items)} items")
-            else:
-                print(f"⚠️  {source['name']}: No items found")
+            source, items = await t
         except Exception as e:
-            print(f"❌ Failed to fetch {source['name']}: {e}")
+            print(f"❌ Failed to fetch a source: {e}")
             continue
 
+        name = source.get("name", "unknown")
+        if items:
+            save_raw_items(raw_dir, name, items)
+            for item in items:
+                all_items.append(normalize_item(source, item))
+            print(f"✅ {name}: {len(items)} items")
+        else:
+            print(f"⚠️  {name}: No items found")
+
     all_items = deduplicate(all_items)
-    enriched = enrich_items(all_items, prefs.get("low_credibility_threshold", 50))
+    low_threshold = prefs.get("low_credibility_threshold", 50)
+    if max_concurrency <= 1:
+        enriched = enrich_items(all_items, low_threshold)
+    else:
+        enriched = await enrich_items_async(
+            all_items, low_threshold, max_concurrency=max_concurrency
+        )
     save_processed(processed_dir, enriched)  # This now saves with timestamp wrapper
     digest = build_digest(enriched, prefs.get("daily_digest_items", 12))
     save_digest(digest_dir, digest, latest_path)
     markdown = render_digest_markdown(digest)
     save_digest_markdown(digest_dir, markdown)
 
-    with (DATA_DIR / "digests" / "latest.meta.json").open("w", encoding="utf-8") as f:
+    with (base_data_dir / "digests" / "latest.meta.json").open(
+        "w", encoding="utf-8"
+    ) as f:
         json.dump(
             {"date": date_str, "count": len(enriched)}, f, ensure_ascii=False, indent=2
         )
+
+
+def run():
+    asyncio.run(run_async())
 
 
 if __name__ == "__main__":

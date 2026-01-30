@@ -5,6 +5,7 @@ import json
 import re
 
 from openai import OpenAI
+import asyncio
 
 
 def get_default_model() -> str:
@@ -102,3 +103,19 @@ def analyze_intent(text: str) -> Dict[str, str]:
             "intent_en": output_text[:200],
             "intent_zh": "(模型输出未解析为 JSON)",
         }
+
+
+async def summarize_bilingual_async(text: str) -> Dict[str, str]:
+    """
+    Async wrapper around `summarize_bilingual` for concurrent pipelines.
+    Uses a thread to avoid requiring an async OpenAI client.
+    """
+    return await asyncio.to_thread(summarize_bilingual, text)
+
+
+async def analyze_intent_async(text: str) -> Dict[str, str]:
+    """
+    Async wrapper around `analyze_intent` for concurrent pipelines.
+    Uses a thread to avoid requiring an async OpenAI client.
+    """
+    return await asyncio.to_thread(analyze_intent, text)

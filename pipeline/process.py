@@ -4,7 +4,14 @@ from typing import Dict, List
 
 from dateutil import parser as dateparser
 
-from pipeline.llm import analyze_intent, summarize_bilingual
+import asyncio
+
+from pipeline.llm import (
+    analyze_intent,
+    analyze_intent_async,
+    summarize_bilingual,
+    summarize_bilingual_async,
+)
 from pipeline.score import add_corroboration, compute_credibility, credibility_label
 from pipeline.utils import ensure_dir, slugify
 
@@ -92,6 +99,115 @@ def enrich_items(items: List[Dict], low_threshold: int) -> List[Dict]:
     print(f"✅ Successfully processed {total} articles\n")
     
     return enriched
+
+
+async def enrich_items_async(
+    items: List[Dict],
+    low_threshold: int,
+    max_concurrency: int = 3,
+) -> List[Dict]:
+    """
+    Concurrent async variant of `enrich_items`.
+
+    - Bounded concurrency via semaphore (`max_concurrency`)
+    - Preserves output ordering
+    - If a single item fails AI enrichment, the item still returns with best-effort fields
+    """
+    items = add_corroboration(items)
+    total = len(items)
+    if total == 0:
+        return []
+
+    sem = asyncio.Semaphore(max(1, int(max_concurrency or 1)))
+
+    print(
+        f"\n🔄 Processing {total} articles with AI analysis (concurrency={max(1, int(max_concurrency or 1))})..."
+    )
+    print("━" * 60)
+
+    async def _process_one(idx: int, item: Dict) -> Dict:
+        score = compute_credibility(item["source_credibility"], item["corroboration"])
+        label = credibility_label(score)
+
+        async with sem:
+            try:
+                summary = await summarize_bilingual_async((item.get("text") or "")[:4000])
+            except Exception:
+                # Best-effort fallback that mirrors `summarize_bilingual` behavior
+                text = (item.get("text") or "")
+                summary = {
+                    "summary_en": (text[:240] + "...") if text else "",
+                    "summary_zh": "(summary failed)",
+                    "implication_en": "(summary failed)",
+                    "implication_zh": "(summary failed)",
+                }
+
+        item.update(
+            {
+                "summary_en": summary.get("summary_en"),
+                "summary_zh": summary.get("summary_zh"),
+                "implication_en": summary.get("implication_en"),
+                "implication_zh": summary.get("implication_zh"),
+                "credibility_score": score,
+                "credibility_label": label,
+                "lane": "low" if score < low_threshold else "primary",
+            }
+        )
+
+        if item["lane"] == "low":
+            async with sem:
+                try:
+                    intent = await analyze_intent_async((item.get("text") or "")[:3000])
+                    item["intent_en"] = intent.get("intent_en")
+                    item["intent_zh"] = intent.get("intent_zh")
+                except Exception:
+                    item["intent_en"] = "(intent failed)"
+                    item["intent_zh"] = "(intent failed)"
+
+        return item
+
+    # Use tasks + as_completed for progress updates, but keep stable ordering.
+    tasks = []
+    for i in range(total):
+        t = asyncio.create_task(_process_one(i, items[i]))
+        setattr(t, "_pipeline_idx", i)
+        tasks.append(t)
+    results: List[Dict] = [None] * total  # type: ignore[assignment]
+    completed = 0
+
+    for task in asyncio.as_completed(tasks):
+        try:
+            item = await task
+            # Find index by identity fallback: we included idx in task closure via list index.
+            # We can recover it by scanning, but that's O(n). Instead, store it on the task.
+            # If we can't, just append.
+            idx = getattr(task, "_pipeline_idx", None)
+            if isinstance(idx, int) and 0 <= idx < total:
+                results[idx] = item
+            else:
+                # Fallback: fill first empty slot
+                for j in range(total):
+                    if results[j] is None:
+                        results[j] = item
+                        break
+        except Exception:
+            # Should be rare due to internal try/except, but keep pipeline moving
+            pass
+
+        completed += 1
+        if completed == total or completed % 5 == 0:
+            print(f"\r✅ Completed {completed}/{total} articles...", end="", flush=True)
+
+    print(f"\r✅ Completed {total}/{total} articles{' ' * 30}")
+    print("━" * 60)
+    print(f"✅ Successfully processed {total} articles\n")
+
+    # Replace any None slots with the original item (should not happen, but keeps type stable)
+    for i in range(total):
+        if results[i] is None:
+            results[i] = items[i]
+
+    return results
 
 
 def save_processed(output_dir, items: List[Dict]):

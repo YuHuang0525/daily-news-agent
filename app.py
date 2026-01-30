@@ -1,6 +1,14 @@
+import ipaddress
+import json as json_module
 import os
+import re
+import socket
 from pathlib import Path
+from typing import Optional
+from urllib.parse import urlparse
 
+import requests
+from bs4 import BeautifulSoup
 from flask import Flask, jsonify, render_template, request
 
 # Optional dotenv support
@@ -16,6 +24,88 @@ DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 ROOT_DIR = Path(__file__).resolve().parent
 DATA_DIR = ROOT_DIR / "data" / "digests"
 PROCESSED_DIR = ROOT_DIR / "data" / "processed"
+ARTICLES_DIR = ROOT_DIR / "data" / "articles"
+
+
+# ---------------------------------------------------------------------------
+# Article fetch / extract / cache helpers
+# ---------------------------------------------------------------------------
+
+def _is_private_host(hostname: str) -> bool:
+    """Return True if the hostname resolves to a private/loopback IP."""
+    try:
+        ip = ipaddress.ip_address(socket.gethostbyname(hostname))
+        return (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_multicast
+            or ip.is_reserved
+        )
+    except Exception:
+        return True  # fail closed
+
+
+def _safe_fetch_html(url: str, timeout: int = 10, max_bytes: int = 2_000_000) -> str:
+    """Fetch HTML from a URL with basic SSRF protection."""
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError("Only http/https URLs are allowed")
+    if not parsed.hostname or _is_private_host(parsed.hostname):
+        raise ValueError("Blocked host (private/invalid)")
+
+    headers = {"User-Agent": "daily-news-agent/1.0 (+local)"}
+    r = requests.get(url, headers=headers, timeout=timeout)
+    r.raise_for_status()
+
+    content = r.content[:max_bytes]
+    return content.decode(r.encoding or "utf-8", errors="replace")
+
+
+def _extract_main_text(html: str) -> str:
+    """Extract readable text from HTML."""
+    soup = BeautifulSoup(html, "html.parser")
+    for tag in soup(["script", "style", "noscript", "svg", "nav", "footer", "header"]):
+        tag.decompose()
+    text = soup.get_text("\n")
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()[:50000]  # cap at 50k chars
+
+
+def _article_cache_path(date_str: str, item_id: str) -> Path:
+    return ARTICLES_DIR / date_str / f"{item_id}.json"
+
+
+def _load_cached_article(date_str: str, item_id: str) -> Optional[str]:
+    p = _article_cache_path(date_str, item_id)
+    if p.exists():
+        try:
+            return json_module.loads(p.read_text(encoding="utf-8")).get("text")
+        except Exception:
+            return None
+    return None
+
+
+def _save_cached_article(date_str: str, item_id: str, url: str, text: str) -> None:
+    p = _article_cache_path(date_str, item_id)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(
+        json_module.dumps({"id": item_id, "url": url, "text": text}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+def _fetch_and_cache_article(date_str: str, item_id: str, url: str) -> Optional[str]:
+    """Fetch article, extract text, cache it, and return the text (or None on failure)."""
+    try:
+        html = _safe_fetch_html(url)
+        text = _extract_main_text(html)
+        if text:
+            _save_cached_article(date_str, item_id, url, text)
+        return text
+    except Exception as e:
+        print(f"[fetch_article] Failed to fetch {url}: {e}")
+        return None
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
 
@@ -134,14 +224,18 @@ def chat():
     
     This endpoint processes user questions about the daily digest
     and provides contextual responses.
+    
+    If a card is selected (active_item_id), the model focuses on that story.
+    If the model determines more context is needed (2-pass), we fetch the article.
     """
     data = request.get_json()
     message = data.get("message", "")
     history = data.get("history", [])
     digest_context = data.get("digest_context", {})
+    active_item_id = data.get("active_item_id")  # Selected article
+    active_item = data.get("active_item")  # Optional compact selected item payload
 
     # If the user asks which model is being used, answer deterministically
-    # from server config (don't call the LLM for this).
     msg_lower = (message or "").lower().strip()
     if any(
         phrase in msg_lower
@@ -159,79 +253,163 @@ def chat():
                 "model": _active_openai_model(),
             }
         )
-    
+
+    # Gather all items from digest
+    primary_items = (digest_context or {}).get("primary") or []
+    low_items = (digest_context or {}).get("low_credibility") or []
+    all_items = list(primary_items) + list(low_items)
+    date_str = (digest_context or {}).get("date") or "unknown"
+
+    # Debug logging
+    print(
+        f"[chat] active_item_id={active_item_id}, "
+        f"has_active_item={bool(active_item)}, total_items={len(all_items)}"
+    )
+
+    # Find selected item if provided
+    selected = None
+    # Prefer explicit selected item payload from frontend (avoids id mismatches between datasets)
+    if isinstance(active_item, dict) and active_item.get("title"):
+        selected = active_item
+    elif active_item_id:
+        selected = next(
+            (it for it in all_items if str(it.get("id", "")) == str(active_item_id)),
+            None,
+        )
+        if selected:
+            print(f"[chat] Found selected item: {selected.get('title', '')[:50]}")
+        else:
+            print(f"[chat] WARNING: active_item_id={active_item_id} not found in items")
+
+    def _fmt_item(it: dict) -> str:
+        return (
+            f"Title: {it.get('title', 'Untitled')}\n"
+            f"Source: {it.get('source', '')}\n"
+            f"URL: {it.get('url', '')}\n"
+            f"Tags: {', '.join(it.get('tags', []) or [])}\n"
+            f"Summary (EN): {it.get('summary_en', '')}\n"
+            f"Implication (EN): {it.get('implication_en', '')}\n"
+        )
+
+    selected_block = _fmt_item(selected) if selected else "(No article selected)"
+
+    # Build a small "other stories" block for additional context
+    other_items = [it for it in primary_items if not selected or it.get("id") != selected.get("id")]
+    top_others = "\n---\n".join(_fmt_item(it) for it in other_items[:3])
+
     # Try to use OpenAI if available
     openai_key = os.getenv("OPENAI_API_KEY")
-    
+    model = _active_openai_model()
+
     if openai_key:
         try:
             import openai
-            
+
             client = openai.OpenAI(api_key=openai_key)
-            
-            # Build context from digest
-            news_context = ""
-            if digest_context and digest_context.get("primary"):
-                news_items = []
-                for item in digest_context["primary"][:5]:  # Top 5 items
-                    news_items.append(
-                        f"- {item.get('title', 'Untitled')}: "
-                        f"{item.get('summary_en', '')} "
-                        f"(Tags: {', '.join(item.get('tags', []))})"
+
+            def _call_openai(msgs: list, token_limit: int = 500, temperature: float = 0.7) -> str:
+                if model.startswith("gpt-5"):
+                    resp = client.chat.completions.create(
+                        model=model,
+                        messages=msgs,
+                        temperature=temperature,
+                        extra_body={"max_completion_tokens": token_limit},
                     )
-                news_context = "\n".join(news_items)
-            
-            system_prompt = f"""You are a helpful assistant for a daily news digest app focused on tech, finance, and global politics with China/US emphasis. 
+                else:
+                    resp = client.chat.completions.create(
+                        model=model,
+                        messages=msgs,
+                        max_tokens=token_limit,
+                        temperature=temperature,
+                    )
+                return resp.choices[0].message.content or ""
 
-Today's top stories:
-{news_context}
+            # ------------------------------------------------------------------
+            # Pass 1: Router – decide if we need to fetch the full article
+            # ------------------------------------------------------------------
+            needs_fetch = False
+            if selected and selected.get("url") and selected.get("id"):
+                router_system = (
+                    "You are a routing function. Decide whether the user's question can be "
+                    "answered using ONLY the provided digest snippet (title, summary, implication). "
+                    "If the snippet is insufficient and fetching the full article would help, "
+                    "set needs_fetch=true.\n\n"
+                    "Return ONLY valid JSON with keys: needs_fetch (boolean), reason (string)."
+                )
+                router_user = (
+                    f"SELECTED ITEM DIGEST:\n{selected_block}\n\n"
+                    f"USER QUESTION:\n{message}\n"
+                )
+                router_msgs = [
+                    {"role": "system", "content": router_system},
+                    {"role": "user", "content": router_user},
+                ]
+                try:
+                    router_raw = _call_openai(router_msgs, token_limit=150, temperature=0.0)
+                    # Parse JSON from response (allow markdown fences)
+                    router_raw_clean = re.sub(r"```json\s*", "", router_raw)
+                    router_raw_clean = re.sub(r"```\s*", "", router_raw_clean)
+                    router_json = json_module.loads(router_raw_clean)
+                    needs_fetch = bool(router_json.get("needs_fetch"))
+                    print(f"[router] needs_fetch={needs_fetch}, reason={router_json.get('reason','')}")
+                except Exception as e:
+                    print(f"[router] parse error: {e}, raw={router_raw[:200] if 'router_raw' in dir() else ''}")
+                    needs_fetch = False
 
-Help users understand these stories, their implications, and connections. Be concise but insightful. When relevant, mention credibility considerations."""
+            # ------------------------------------------------------------------
+            # Optionally fetch the article
+            # ------------------------------------------------------------------
+            article_text: Optional[str] = None
+            if needs_fetch and selected:
+                item_id = str(selected.get("id", ""))
+                item_url = selected.get("url", "")
+                # Try cache first
+                article_text = _load_cached_article(date_str, item_id)
+                if not article_text and item_url:
+                    article_text = _fetch_and_cache_article(date_str, item_id, item_url)
 
-            # Build messages
-            messages = [{"role": "system", "content": system_prompt}]
-            
-            # Add history (last 6 messages)
+            # ------------------------------------------------------------------
+            # Pass 2: Answer the user's question
+            # ------------------------------------------------------------------
+            answer_system = (
+                "You are a helpful assistant for a daily news digest app focused on tech, "
+                "finance, and global politics with China/US emphasis.\n\n"
+                "If a SELECTED ITEM is provided, prioritize answering about that item.\n"
+                "If ARTICLE TEXT EXCERPT is provided, use it for deeper details.\n"
+                "If details are still missing, say so honestly and answer with what is available.\n"
+                "Be concise but insightful."
+            )
+
+            answer_user = f"SELECTED ITEM DIGEST:\n{selected_block}\n\n"
+            if article_text:
+                excerpt = article_text[:8000]  # bound prompt size
+                answer_user += f"ARTICLE TEXT EXCERPT:\n{excerpt}\n\n"
+            if top_others:
+                answer_user += f"OTHER TOP STORIES (for background):\n{top_others}\n\n"
+            answer_user += f"USER QUESTION:\n{message}\n"
+
+            # Build full message list with history
+            messages = [{"role": "system", "content": answer_system}]
             for msg in history[-6:]:
                 messages.append({
                     "role": msg.get("role", "user"),
                     "content": msg.get("content", "")
                 })
-            
-            # Add current message
-            messages.append({"role": "user", "content": message})
-            
-            model = _active_openai_model()
-            token_limit = 500
+            messages.append({"role": "user", "content": answer_user})
 
-            # Some newer models (e.g. gpt-5.*) reject `max_tokens` and require
-            # `max_completion_tokens`, but older SDK versions may not expose it
-            # as a typed kwarg. `extra_body` passes it through safely.
-            if model.startswith("gpt-5"):
-                response = client.chat.completions.create(
-                    model=model,
-                    messages=messages,
-                    temperature=0.7,
-                    extra_body={"max_completion_tokens": token_limit},
-                )
-            else:
-                response = client.chat.completions.create(
-                    model=model,
-                    messages=messages,
-                    max_tokens=token_limit,
-                    temperature=0.7,
-                )
-            
-            reply = response.choices[0].message.content
-            return jsonify({"reply": reply, "model": model})
-            
+            reply = _call_openai(messages, token_limit=600, temperature=0.7)
+            return jsonify({
+                "reply": reply,
+                "model": model,
+                "fetched_article": bool(article_text),
+            })
+
         except Exception as e:
-            # Fall through to fallback response
             print(f"OpenAI error: {e}")
-    
+
     # Fallback intelligent response without API
     reply = generate_fallback_response(message, digest_context)
-    return jsonify({"reply": reply, "model": _active_openai_model()})
+    return jsonify({"reply": reply, "model": model})
 
 
 def generate_fallback_response(message: str, digest_context: dict) -> str:

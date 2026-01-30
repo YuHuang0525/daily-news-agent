@@ -7,12 +7,18 @@ const chatMessages = document.getElementById("chat-messages");
 const chatInput = document.getElementById("chat-input");
 const chatSendBtn = document.getElementById("chat-send-btn");
 const filterTabs = document.querySelectorAll(".filter-tab");
+const chatContextIndicator = document.getElementById("chat-context-indicator");
+const contextTitle = document.getElementById("context-title");
+const contextClearBtn = document.getElementById("context-clear");
 
 // State
 let allItems = [];
 let currentFilter = "all";
 let chatHistory = [];
 let digestData = null;
+let activeItemId = null; // Selected article for chat context
+let activeItemTitle = null; // Title of selected article
+let activeItemContext = null; // Compact selected item payload for backend
 
 // Utilities
 const formatDate = (isoDate) => {
@@ -68,6 +74,25 @@ const escapeHtml = (text) => {
   const div = document.createElement("div");
   div.textContent = text;
   return div.innerHTML;
+};
+
+// Update the context indicator above chat input
+const updateContextIndicator = () => {
+  if (activeItemId && activeItemTitle && chatContextIndicator) {
+    contextTitle.textContent = activeItemTitle;
+    chatContextIndicator.style.display = "flex";
+  } else if (chatContextIndicator) {
+    chatContextIndicator.style.display = "none";
+  }
+};
+
+// Clear selection helper
+const clearSelection = () => {
+  activeItemId = null;
+  activeItemTitle = null;
+  activeItemContext = null;
+  document.querySelectorAll(".news-card.selected").forEach((el) => el.classList.remove("selected"));
+  updateContextIndicator();
 };
 
 // Card Rendering
@@ -177,6 +202,46 @@ const createCard = (item, index) => {
     expandBtn.classList.toggle("expanded", isExpanded);
     expandBtn.querySelector("span").textContent = isExpanded ? "Show less" : "Show more";
     implicationDiv.style.display = isExpanded ? "block" : "none";
+  });
+
+  // Click-to-select card as chat context (toggle)
+  card.addEventListener("click", (e) => {
+    // Don't select if clicking the external link or lang toggle buttons
+    if (e.target.closest("a") || e.target.closest(".lang-btn") || e.target.closest(".expand-btn")) return;
+
+    const itemId = String(item.id || "");
+    const isSameItem = activeItemId && String(activeItemId) === itemId;
+
+    // Remove selection from all cards
+    document.querySelectorAll(".news-card.selected").forEach((el) => el.classList.remove("selected"));
+
+    if (isSameItem) {
+      // Deselect
+      activeItemId = null;
+      activeItemTitle = null;
+      activeItemContext = null;
+      updateContextIndicator();
+    } else {
+      // Select this card
+      activeItemId = itemId;
+      activeItemTitle = item.title || "Untitled";
+      // Send a compact context object to backend (avoids id mismatches between datasets)
+      activeItemContext = {
+        id: item.id,
+        title: item.title,
+        url: item.url,
+        source: item.source,
+        tags: item.tags,
+        credibility_label: item.credibility_label,
+        credibility_score: item.credibility_score,
+        summary_en: item.summary_en,
+        implication_en: item.implication_en,
+        summary_zh: item.summary_zh,
+        implication_zh: item.implication_zh,
+      };
+      card.classList.add("selected");
+      updateContextIndicator();
+    }
   });
 
   return card;
@@ -300,6 +365,8 @@ const sendMessage = async () => {
         message,
         history: chatHistory.slice(-10),
         digest_context: digestData,
+        active_item_id: activeItemId, // Selected article for focused context
+        active_item: activeItemContext, // Compact selected item payload
       }),
     });
 
@@ -360,6 +427,11 @@ const generateFallbackResponse = (message) => {
 
 // Event Listeners
 chatSendBtn.addEventListener("click", sendMessage);
+
+// Clear selection button
+if (contextClearBtn) {
+  contextClearBtn.addEventListener("click", clearSelection);
+}
 
 chatInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) {

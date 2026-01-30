@@ -17,6 +17,21 @@ let digestData = null;
 // Utilities
 const formatDate = (isoDate) => {
   if (!isoDate) return "Today";
+  
+  // Parse date string carefully to avoid timezone issues
+  // If it's just a date (YYYY-MM-DD), treat it as local date
+  if (isoDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
+    const [year, month, day] = isoDate.split('-').map(Number);
+    const date = new Date(year, month - 1, day); // month is 0-indexed
+    return date.toLocaleDateString("en-US", {
+      weekday: "long",
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  }
+  
+  // For full ISO timestamps, parse normally
   const date = new Date(isoDate);
   return date.toLocaleDateString("en-US", {
     weekday: "long",

@@ -130,14 +130,54 @@ def extract_links(base_url: str, html: str, limit: int, debug=False) -> List[str
 
 def extract_article_text(html: str) -> str:
     soup = BeautifulSoup(html, "html.parser")
-    article = soup.find("article")
+    
+    # Remove unwanted elements that contain non-article text
+    for element in soup.find_all(['script', 'style', 'nav', 'header', 'footer', 'aside', 'iframe', 'noscript']):
+        element.decompose()
+    
+    # Remove common navigation/menu classes
+    for element in soup.find_all(class_=['nav', 'navigation', 'menu', 'header', 'footer', 'sidebar', 'widget', 'ad', 'advertisement']):
+        element.decompose()
+    
+    # Try to find article content in common containers
+    article = None
+    
+    # Try various article content selectors
+    selectors = [
+        'article',
+        '[role="main"]',
+        '.article-content',
+        '.post-content',
+        '.entry-content',
+        '.content-wrapper',
+        'main',
+        '#main-content',
+        '.main-content'
+    ]
+    
+    for selector in selectors:
+        article = soup.select_one(selector)
+        if article:
+            break
+    
     if article:
-        text = " ".join(p.get_text(" ", strip=True) for p in article.find_all("p"))
-        if text.strip():
-            return text
+        # Extract text from paragraphs within the article
+        paragraphs = article.find_all("p")
+        # Filter out very short paragraphs (likely not content)
+        text_parts = [p.get_text(" ", strip=True) for p in paragraphs if len(p.get_text(strip=True)) > 30]
+        if text_parts:
+            return " ".join(text_parts)
+    
+    # Fallback: get all paragraphs but filter better
     paragraphs = soup.find_all("p")
-    text = " ".join(p.get_text(" ", strip=True) for p in paragraphs[:18])
-    return text.strip()
+    text_parts = []
+    for p in paragraphs[:30]:  # Check more paragraphs
+        text = p.get_text(" ", strip=True)
+        # Only include substantial paragraphs
+        if len(text) > 30 and not any(skip in text.lower() for skip in ['cookie', 'subscribe', 'newsletter', 'menu']):
+            text_parts.append(text)
+    
+    return " ".join(text_parts[:18])  # Limit to reasonable amount
 
 
 def extract_title(html: str) -> str:

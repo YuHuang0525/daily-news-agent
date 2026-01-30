@@ -23,7 +23,7 @@ sources:
       - finance
     credibility_baseline: 80
     max_items: 20
-    enabled: true
+    enabled: false
 
   - name: "Hacker News"
     type: "webpage"
@@ -35,7 +35,7 @@ sources:
       - startups
     credibility_baseline: 75
     max_items: 20
-    enabled: true
+    enabled: false
 
   - name: "CNN"
     type: "webpage"
@@ -62,3 +62,39 @@ sources:
     credibility_baseline: 85
     max_items: 20
     enabled: false
+
+  - name: "STAT"
+    type: "webpage"
+    url: "https://www.statnews.com/"
+    language: "en"
+    region: "US"
+    tags:
+      - health care
+      - science
+    credibility_baseline: 85
+    max_items: 15
+    enabled: true
+
+  - name: "Modern Healthcare"
+    type: "webpage"
+    url: "https://www.modernhealthcare.com/latest-news/"
+    language: "en"
+    region: "US"
+    tags:
+      - health care
+      - science
+    credibility_baseline: 80
+    max_items: 15
+    enabled: true
+
+  - name: "Stanford Medicine News Center"
+    type: "webpage"
+    url: "https://med.stanford.edu/news.html"
+    language: "en"
+    region: "US"
+    tags:
+      - health care
+      - science
+    credibility_baseline: 85
+    max_items: 15
+    enabled: true

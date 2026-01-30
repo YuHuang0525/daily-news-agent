@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 import requests
 from bs4 import BeautifulSoup
 from flask import Flask, jsonify, render_template, request
+from pipeline.utils import load_sources
 
 # Optional dotenv support
 try:
@@ -117,6 +118,34 @@ def _active_openai_model() -> str:
 @app.route("/")
 def index():
     return render_template("index.html")
+
+
+@app.route("/api/sources")
+def sources():
+    """
+    Return enabled sources from config/sources.yml for dynamic UI rendering.
+    """
+    try:
+        sources_list = load_sources() or []
+        enabled = []
+        for s in sources_list:
+            if not isinstance(s, dict):
+                continue
+            if bool(s.get("enabled", False)) is True:
+                enabled.append(
+                    {
+                        "name": s.get("name"),
+                        "type": s.get("type"),
+                        "url": s.get("url"),
+                        "language": s.get("language"),
+                        "region": s.get("region"),
+                        "tags": s.get("tags", []),
+                    }
+                )
+        return jsonify({"sources": enabled})
+    except Exception as e:
+        print(f"Error loading sources.yml: {e}")
+        return jsonify({"sources": []})
 
 
 @app.route("/api/digest")

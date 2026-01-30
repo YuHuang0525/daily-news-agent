@@ -6,7 +6,7 @@ const itemCount = document.getElementById("item-count");
 const chatMessages = document.getElementById("chat-messages");
 const chatInput = document.getElementById("chat-input");
 const chatSendBtn = document.getElementById("chat-send-btn");
-const filterTabs = document.querySelectorAll(".filter-tab");
+const filterTabsContainer = document.getElementById("filter-tabs");
 const chatContextIndicator = document.getElementById("chat-context-indicator");
 const contextTitle = document.getElementById("context-title");
 const contextClearBtn = document.getElementById("context-clear");
@@ -19,6 +19,8 @@ let digestData = null;
 let activeItemId = null; // Selected article for chat context
 let activeItemTitle = null; // Title of selected article
 let activeItemContext = null; // Compact selected item payload for backend
+let enabledSources = []; // from sources.yml (/api/sources)
+let enabledSourceSet = new Set();
 
 // Utilities
 const formatDate = (isoDate) => {
@@ -112,7 +114,10 @@ const createCard = (item, index) => {
     "Hacker News": "hackernews.png",
     "CNN": "cnn.png",
     "iNewsweek": "inewsweek.png",
-    "Washington Post": "wapo.png"
+    "Washington Post": "wapo.png",
+    "STAT": "stat.png",
+    "Modern Healthcare": "modern_health.png",
+    "Stanford Medicine News Center": "stanford_medicine.png",
   };
   
   const logoFile = sourceLogos[sourceName];
@@ -279,18 +284,71 @@ const filterItems = (source) => {
   }
 };
 
-// Filter Tab Handlers
-filterTabs.forEach(tab => {
-  tab.addEventListener("click", () => {
-    // Update active state
-    filterTabs.forEach(t => t.classList.remove("active"));
+// -----------------------------
+// Dynamic Source Tabs
+// -----------------------------
+const sourceTabIcons = {
+  "TechCrunch": { img: "techcrunch.png", fallback: "🚀" },
+  "Hacker News": { img: "hackernews.png", fallback: "🟠" },
+  "CNN": { img: "cnn.png", fallback: "📺" },
+  "iNewsweek": { img: "inewsweek.png", fallback: "🌏" },
+  "Washington Post": { img: "wapo.png", fallback: "📰" },
+  "STAT": { img: "stat.png", fallback: "🧬" },
+  "Modern Healthcare": { img: "modern_health.png", fallback: "🏥" },
+  "Stanford Medicine News Center": { img: "stanford_medicine.png", fallback: "🔬" },
+};
+
+const buildFilterTabs = (sources) => {
+  if (!filterTabsContainer) return;
+  filterTabsContainer.innerHTML = "";
+
+  // Always include "All News"
+  const allBtn = document.createElement("button");
+  allBtn.className = "filter-tab active";
+  allBtn.dataset.source = "all";
+  allBtn.innerHTML = `<span class="tab-icon">📰</span> All News`;
+  filterTabsContainer.appendChild(allBtn);
+
+  (sources || []).forEach((s) => {
+    const name = s && s.name ? String(s.name) : "";
+    if (!name) return;
+
+    const cfg = sourceTabIcons[name] || { img: null, fallback: "📰" };
+    const btn = document.createElement("button");
+    btn.className = "filter-tab";
+    btn.dataset.source = name;
+
+    if (cfg.img) {
+      btn.innerHTML = `
+        <img src="/static/icons/${cfg.img}" alt="${escapeHtml(name)}" class="tab-icon-img"
+          onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';" />
+        <span class="tab-icon-fallback" style="display:none;">${cfg.fallback}</span>
+        <span class="tab-label">${escapeHtml(name)}</span>
+      `;
+    } else {
+      btn.innerHTML = `
+        <span class="tab-icon">${cfg.fallback}</span>
+        <span class="tab-label">${escapeHtml(name)}</span>
+      `;
+    }
+
+    filterTabsContainer.appendChild(btn);
+  });
+};
+
+// Event delegation for dynamically created tabs
+if (filterTabsContainer) {
+  filterTabsContainer.addEventListener("click", (e) => {
+    const tab = e.target.closest(".filter-tab");
+    if (!tab) return;
+
+    filterTabsContainer.querySelectorAll(".filter-tab").forEach((t) => t.classList.remove("active"));
     tab.classList.add("active");
-    
-    // Filter items
-    currentFilter = tab.dataset.source;
+
+    currentFilter = tab.dataset.source || "all";
     filterItems(currentFilter);
   });
-});
+}
 
 // Chat Functions
 const addMessage = (content, role = "user") => {
@@ -449,11 +507,22 @@ chatInput.addEventListener("input", () => {
 // Fetch and render news
 const loadNews = async () => {
   try {
+    // Load enabled sources first so tabs match sources.yml
+    const sourcesRes = await fetch("/api/sources");
+    const sourcesData = await sourcesRes.json();
+    enabledSources = (sourcesData && sourcesData.sources) ? sourcesData.sources : [];
+    enabledSourceSet = new Set(enabledSources.map(s => String(s.name)));
+    buildFilterTabs(enabledSources);
+
     // Load all items
     const itemsRes = await fetch("/api/all-items");
     const itemsData = await itemsRes.json();
     
-    allItems = itemsData.items || [];
+    const rawItems = itemsData.items || [];
+    // Keep UI consistent: only show items from enabled sources
+    allItems = enabledSourceSet.size
+      ? rawItems.filter((it) => enabledSourceSet.has(String(it.source)))
+      : rawItems;
     
     // Update timestamp
     if (itemsData.timestamp) {
@@ -491,7 +560,8 @@ const updateFilterCounts = () => {
   });
   
   // Update tab labels (optional - could show counts)
-  filterTabs.forEach(tab => {
+  const tabs = filterTabsContainer ? Array.from(filterTabsContainer.querySelectorAll(".filter-tab")) : [];
+  tabs.forEach(tab => {
     const source = tab.dataset.source;
     if (source === "all") {
       // Already shows total count in filter-info

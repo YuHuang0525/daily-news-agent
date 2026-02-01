@@ -41,7 +41,11 @@ async def run_async():
     load_dotenv()
     sources = [s for s in load_sources() if s.get("enabled")]
     prefs = load_preferences()
-    date_str = today_date_str()
+    tz_name = os.getenv("PIPELINE_TIMEZONE", prefs.get("timezone", "America/Los_Angeles"))
+    date_str = today_date_str(tz_name)
+    for s in sources:
+        # Pass pipeline timezone through to fetchers (e.g., STAT day page logic)
+        s["_tz_name"] = tz_name
 
     max_concurrency = int(
         os.getenv("PIPELINE_MAX_CONCURRENCY", prefs.get("max_concurrency", 3))

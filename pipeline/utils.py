@@ -27,8 +27,35 @@ def ensure_dir(path: Path):
     path.mkdir(parents=True, exist_ok=True)
 
 
-def today_date_str():
-    return datetime.now().strftime("%Y-%m-%d")
+def _default_timezone_name() -> str:
+    # Env override for cron / servers that run in UTC
+    tz = os.getenv("PIPELINE_TIMEZONE")
+    if tz:
+        return tz
+    try:
+        prefs = load_preferences()
+        tz = prefs.get("timezone")
+        if tz:
+            return tz
+    except Exception:
+        pass
+    # Project default (PST/PDT)
+    return "America/Los_Angeles"
+
+
+def now_in_timezone(tz_name: str | None = None) -> datetime:
+    tz_name = tz_name or _default_timezone_name()
+    try:
+        from zoneinfo import ZoneInfo  # py3.9+
+
+        return datetime.now(ZoneInfo(tz_name))
+    except Exception:
+        # Fallback to local time if zoneinfo isn't available for some reason
+        return datetime.now()
+
+
+def today_date_str(tz_name: str | None = None) -> str:
+    return now_in_timezone(tz_name).strftime("%Y-%m-%d")
 
 
 def slugify(text: str) -> str:

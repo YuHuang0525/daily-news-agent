@@ -8,7 +8,7 @@ import feedparser
 import requests
 from bs4 import BeautifulSoup
 
-from pipeline.utils import ensure_dir, slugify
+from pipeline.utils import ensure_dir, now_in_timezone, slugify
 
 
 def fetch_rss(source: Dict) -> List[Dict]:
@@ -386,12 +386,9 @@ def fetch_webpage(source: Dict) -> List[Dict]:
         if "statnews.com" in (parsed0.netloc or "").lower():
             # If user configured homepage, auto-switch to today's day page.
             if parsed0.path in ("", "/"):
-                try:
-                    from zoneinfo import ZoneInfo  # py3.9+
-                    today_et = datetime.now(ZoneInfo("America/New_York"))
-                except Exception:
-                    today_et = datetime.utcnow()
-                fetch_url = f"https://www.statnews.com/{today_et:%Y/%m/%d}/"
+                tz_name = source.get("_tz_name") or source.get("timezone")
+                today_local = now_in_timezone(tz_name)
+                fetch_url = f"https://www.statnews.com/{today_local:%Y/%m/%d}/"
 
         response = requests.get(fetch_url, headers=headers, timeout=30)
         response.raise_for_status()

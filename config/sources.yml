@@ -1,0 +1,100 @@
+sources:
+  - name: "iNewsweek"
+    type: "webpage"
+    url: "https://www.inewsweek.cn/"
+    language: "zh"
+    region: "CN"
+    tags:
+      - politics
+      - finance
+      - tech
+    credibility_baseline: 60
+    max_items: 15
+    enabled: true
+
+  - name: "TechCrunch"
+    type: "webpage"
+    url: "https://techcrunch.com/"
+    language: "en"
+    region: "US"
+    tags:
+      - tech
+      - startups
+      - finance
+    credibility_baseline: 80
+    max_items: 10
+    enabled: true
+
+  - name: "Hacker News"
+    type: "webpage"
+    url: "https://news.ycombinator.com/"
+    language: "en"
+    region: "US"
+    tags:
+      - tech
+      - startups
+    credibility_baseline: 75
+    max_items: 10
+    enabled: true
+
+  - name: "CNN"
+    type: "webpage"
+    url: "https://www.cnn.com/"
+    language: "en"
+    region: "US"
+    tags:
+      - politics
+      - world
+      - finance
+    credibility_baseline: 70
+    max_items: 10
+    enabled: true
+
+  - name: "Washington Post"
+    type: "webpage"
+    url: "https://www.washingtonpost.com/"
+    language: "en"
+    region: "US"
+    tags:
+      - politics
+      - world
+      - finance
+    credibility_baseline: 85
+    max_items: 20
+    enabled: false
+
+  - name: "STAT"
+    type: "webpage"
+    url: "https://www.statnews.com/"
+    language: "en"
+    region: "US"
+    tags:
+      - health care
+      - science
+    credibility_baseline: 85
+    max_items: 15
+    enabled: false
+
+  - name: "Modern Healthcare"
+    type: "webpage"
+    url: "https://www.modernhealthcare.com/latest-news/"
+    language: "en"
+    region: "US"
+    tags:
+      - health care
+      - science
+    credibility_baseline: 80
+    max_items: 15
+    enabled: false
+
+  - name: "Stanford Medicine News Center"
+    type: "webpage"
+    url: "https://med.stanford.edu/news.html"
+    language: "en"
+    region: "US"
+    tags:
+      - health care
+      - science
+    credibility_baseline: 85
+    max_items: 15
+    enabled: false

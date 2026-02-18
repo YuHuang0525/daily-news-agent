@@ -1,0 +1,9 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+# 7:00 AM PST = 15:00 UTC (during PDT this becomes 8:00 AM)
+cronSchedule = "0 15 * * *"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3

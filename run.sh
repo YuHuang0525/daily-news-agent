@@ -1,51 +1,56 @@
 #!/bin/bash
 # Daily News Agent - Run Script
-# This script fetches news, processes it, and starts the web server
+# Runs the news pipeline, then starts the web server.
+# Works both locally (with .venv) and on Railway (system Python + gunicorn).
 
-set -e  # Exit on error
+set -e
 
 echo "╔════════════════════════════════════════════════════════════════╗"
 echo "║           Daily News Agent - Starting Pipeline                ║"
 echo "╚════════════════════════════════════════════════════════════════╝"
 echo ""
 
-# Check if virtual environment exists
-if [ ! -d ".venv" ]; then
-    echo "❌ Error: Virtual environment not found (.venv)"
-    echo "Please create a virtual environment first:"
-    echo "  python3 -m venv .venv"
-    echo "  source .venv/bin/activate"
-    echo "  pip install -r requirements.txt"
-    exit 1
+# Auto-detect Python: prefer venv for local dev, fall back to system
+if [ -x ".venv/bin/python3" ]; then
+    PYTHON=".venv/bin/python3"
+else
+    PYTHON="python3"
 fi
 
-# Step 1: Run the daily pipeline
-echo "📰 Step 1: Fetching and processing news..."
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-PIPELINE_MAX_CONCURRENCY=5 .venv/bin/python3 pipeline/run_daily.py
+# Monthly cleanup: wipe data on the 1st of each month for a fresh start
+CURRENT_DAY=$(TZ=America/Los_Angeles date +%d)
+if [ "$CURRENT_DAY" = "01" ]; then
+    echo "📅 1st of the month — clearing old data for a fresh start..."
+    rm -rf data/raw/* data/processed/* data/digests/* data/articles/* 2>/dev/null || true
+    echo "✅ Data directories cleared."
+    echo ""
+fi
 
-if [ $? -eq 0 ]; then
-    echo ""
-    echo "✅ Pipeline completed successfully!"
-    echo ""
+# Ensure data directories exist (needed after cleanup or first deploy)
+mkdir -p data/raw data/processed data/digests data/articles
+
+# Run the daily pipeline
+echo "📰 Fetching and processing news..."
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+PIPELINE_MAX_CONCURRENCY=5 $PYTHON pipeline/run_daily.py && \
+    echo -e "\n✅ Pipeline completed successfully!\n" || \
+    echo -e "\n⚠️  Pipeline failed — starting server with existing data.\n"
+
+# Start web server
+echo "🚀 Starting web server..."
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+if [ -n "$RAILWAY_ENVIRONMENT" ]; then
+    exec gunicorn \
+        --bind "0.0.0.0:${PORT:-8000}" \
+        --workers 2 \
+        --timeout 120 \
+        app:app
 else
     echo ""
-    echo "❌ Pipeline failed. Please check the errors above."
-    exit 1
+    echo "╔════════════════════════════════════════════════════════════════╗"
+    echo "║   🌐 http://127.0.0.1:8000  —  Press Ctrl+C to stop         ║"
+    echo "╚════════════════════════════════════════════════════════════════╝"
+    echo ""
+    exec $PYTHON app.py
 fi
-
-# Step 2: Start the Flask app
-echo "🚀 Step 2: Starting web server..."
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
-echo "╔════════════════════════════════════════════════════════════════╗"
-echo "║                   🌐 Server Running                            ║"
-echo "║                                                                ║"
-echo "║   Access your news dashboard at:                              ║"
-echo "║   👉  http://127.0.0.1:8000                                   ║"
-echo "║                                                                ║"
-echo "║   Press Ctrl+C to stop the server                             ║"
-echo "╚════════════════════════════════════════════════════════════════╝"
-echo ""
-
-.venv/bin/python3 app.py

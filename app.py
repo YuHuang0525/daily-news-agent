@@ -22,6 +22,11 @@ except ImportError:
 # Model selection (read from environment; defaults kept for backwards compatibility)
 DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
+# On Railway: start background scheduler (runs pipeline on startup + daily at 7 AM PST)
+if os.environ.get("RAILWAY_ENVIRONMENT"):
+    from pipeline.scheduler import start_scheduler
+    start_scheduler()
+
 ROOT_DIR = Path(__file__).resolve().parent
 DATA_DIR = ROOT_DIR / "data" / "digests"
 PROCESSED_DIR = ROOT_DIR / "data" / "processed"

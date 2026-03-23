@@ -441,9 +441,116 @@ def fetch_webpage(source: Dict) -> List[Dict]:
     return items
 
 
+def fetch_reuters(source: Dict) -> List[Dict]:
+    """
+    Fetch Reuters articles via their public news sitemap.
+
+    The homepage scrape is unreliable from datacenter IPs (e.g. Railway) because
+    Reuters blocks or serves JS-only pages to non-browser clients.  The news
+    sitemap (designed for crawlers) reliably returns article URLs, titles, and
+    publication dates from any IP.
+    """
+    SITEMAP_URL = "https://www.reuters.com/arc/outboundfeeds/news-sitemap/?outputType=xml"
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        ),
+        "Referer": "https://www.google.com/",
+    }
+    max_items = source.get("max_items", 15)
+
+    try:
+        resp = requests.get(SITEMAP_URL, headers=headers, timeout=30)
+        resp.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Error fetching Reuters sitemap: {e}")
+        return []
+
+    # Parse sitemap XML with regex (no lxml dependency needed).
+    # Titles are wrapped in CDATA: <news:title><![CDATA[...]]></news:title>
+    locs = re.findall(r"<loc>(https://www\.reuters\.com/[^<]+)</loc>", resp.text)
+    titles = re.findall(
+        r"<news:title>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</news:title>", resp.text
+    )
+    pub_dates = re.findall(
+        r"<news:publication_date>([^<]+)</news:publication_date>", resp.text
+    )
+    languages = re.findall(
+        r"<news:language>([^<]+)</news:language>", resp.text
+    )
+
+    # Filter to English-language articles only
+    candidates = []
+    for i, loc in enumerate(locs):
+        lang = languages[i] if i < len(languages) else ""
+        if lang and lang.strip().lower() != "en":
+            continue
+        # Also skip non-English URL paths as a fallback filter
+        path = urlparse(loc).path
+        if re.match(r"^/(es|fr|de|pt|ja|ar|zh)/", path) or "/portugues/" in path:
+            continue
+        candidates.append(
+            (
+                loc,
+                titles[i].strip() if i < len(titles) else "",
+                pub_dates[i] if i < len(pub_dates) else "",
+            )
+        )
+        if len(candidates) >= max_items:
+            break
+
+    print(f"  🔗 Found {len(candidates)} Reuters articles via sitemap")
+
+    items = []
+    for url, sitemap_title, pub_date in candidates:
+        text = ""
+        title = sitemap_title
+
+        # Try to fetch full article text, but don't fail if blocked (401/403).
+        try:
+            article_resp = requests.get(url, headers=headers, timeout=30)
+            if article_resp.status_code == 200:
+                article_resp.encoding = article_resp.apparent_encoding
+                html = article_resp.text
+                text = extract_article_text(html)
+                if not text or len(text) < 120:
+                    fallback = extract_meta_description(html)
+                    if fallback and len(fallback) >= 80:
+                        text = fallback
+                page_title = extract_title(html)
+                if page_title and page_title.lower() != "reuters.com":
+                    title = page_title
+        except Exception:
+            pass
+
+        # Use sitemap title as fallback content when article page is blocked.
+        if not text or len(text) < 30:
+            text = sitemap_title
+
+        if not title:
+            continue
+
+        items.append(
+            {
+                "title": title,
+                "url": url,
+                "published_at": pub_date or datetime.utcnow().isoformat(),
+                "summary": text[:500],
+                "full_text": text,
+            }
+        )
+
+    return items
+
+
 def fetch_source(source: Dict) -> List[Dict]:
     if source.get("type") == "rss":
         return fetch_rss(source)
+    # Reuters: use dedicated sitemap-based fetcher for reliability
+    if "reuters.com" in urlparse(source.get("url", "")).netloc.lower():
+        return fetch_reuters(source)
     if source.get("type") == "webpage":
         return fetch_webpage(source)
     return []

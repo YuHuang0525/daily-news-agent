@@ -5,7 +5,7 @@ import pytz
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from pipeline.utils import DATA_DIR, today_date_str
+from pipeline.utils import DATA_DIR, today_date_str, load_sources, slugify
 
 _scheduler = None
 _lock = threading.Lock()
@@ -16,9 +16,43 @@ def _pipeline_already_ran_today() -> bool:
     return digest_path.exists()
 
 
+def _sources_missing_raw_data() -> list[str]:
+    """Return names of enabled sources that have no raw data for today."""
+    date_str = today_date_str()
+    raw_dir = DATA_DIR / "raw" / date_str
+    missing = []
+    for s in load_sources():
+        if not s.get("enabled"):
+            continue
+        name = s.get("name", "")
+        raw_file = raw_dir / f"{slugify(name)}.json"
+        if not raw_file.exists():
+            missing.append(name)
+        else:
+            # Also treat empty files / empty arrays as missing
+            try:
+                import json
+                data = json.loads(raw_file.read_text(encoding="utf-8"))
+                if not data:
+                    missing.append(name)
+            except Exception:
+                missing.append(name)
+    return missing
+
+
 def _run_pipeline():
     if _pipeline_already_ran_today():
-        print("[scheduler] Today's digest already exists — skipping.")
+        missing = _sources_missing_raw_data()
+        if missing:
+            print(f"[scheduler] Digest exists but sources missing data: {missing} — retrying...")
+            try:
+                from pipeline.run_daily import run_retry_sources
+                run_retry_sources(missing)
+                print(f"[scheduler] Retry complete for: {missing}")
+            except Exception as e:
+                print(f"[scheduler] Retry error: {e}")
+        else:
+            print("[scheduler] Today's digest already exists — skipping.")
         return
     try:
         print("[scheduler] Starting daily pipeline...")

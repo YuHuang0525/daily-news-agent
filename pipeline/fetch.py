@@ -48,6 +48,7 @@ def extract_links(base_url: str, html: str, limit: int, debug=False) -> List[str
     is_hackernews = 'ycombinator.com' in base_netloc
     is_modernhealthcare = 'modernhealthcare.com' in base_netloc.lower()
     is_statnews = 'statnews.com' in base_netloc.lower()
+    is_reuters = 'reuters.com' in base_netloc.lower()
     is_stanford_med = 'med.stanford.edu' in base_netloc.lower()
     
     total_links = 0
@@ -212,6 +213,10 @@ def extract_links(base_url: str, html: str, limit: int, debug=False) -> List[str
                     and "/events" not in path
                     and "/reports" not in path
                 )
+        elif is_reuters:
+            # Reuters: article URLs end with a date-slug like /slug-YYYY-MM-DD/
+            # Section/category pages (e.g. /world/africa/) should be skipped.
+            is_article = bool(re.search(r"-\d{4}-\d{2}-\d{2}/?$", path))
         else:
             # Western news sites: look for date patterns or article indicators
             is_article = (
@@ -378,6 +383,10 @@ def fetch_webpage(source: Dict) -> List[Dict]:
         'Upgrade-Insecure-Requests': '1'
     }
     
+    # Reuters requires a Referer header to avoid 401 responses.
+    if 'reuters.com' in urlparse(source.get("url", "")).netloc.lower():
+        headers['Referer'] = 'https://www.google.com/'
+
     # For some sites, we want to fetch a specific listing page rather than homepage.
     # - STAT: use today's /YYYY/MM/DD/ day page when configured with homepage URL.
     fetch_url = source.get("url", "")

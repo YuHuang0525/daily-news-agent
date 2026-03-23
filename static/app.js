@@ -118,6 +118,7 @@ const createCard = (item, index) => {
     "STAT": "stat.png",
     "Modern Healthcare": "modern_health.png",
     "Stanford Medicine News Center": "stanford_medicine.png",
+    "Reuters": "reuters_icon.jpg",
   };
   
   const logoFile = sourceLogos[sourceName];
@@ -296,6 +297,7 @@ const sourceTabIcons = {
   "STAT": { img: "stat.png", fallback: "🧬" },
   "Modern Healthcare": { img: "modern_health.png", fallback: "🏥" },
   "Stanford Medicine News Center": { img: "stanford_medicine.png", fallback: "🔬" },
+  "Reuters": { img: "reuters_icon.jpg", fallback: "🌐" },
 };
 
 const buildFilterTabs = (sources) => {

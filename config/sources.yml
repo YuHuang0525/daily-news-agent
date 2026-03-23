@@ -50,6 +50,20 @@ sources:
     max_items: 10
     enabled: true
 
+  - name: "Reuters"
+    type: "webpage"
+    url: "https://www.reuters.com/"
+    language: "en"
+    region: "GLOBAL"
+    tags:
+      - politics
+      - world
+      - finance
+      - business
+    credibility_baseline: 90
+    max_items: 15
+    enabled: true
+
   - name: "Washington Post"
     type: "webpage"
     url: "https://www.washingtonpost.com/"

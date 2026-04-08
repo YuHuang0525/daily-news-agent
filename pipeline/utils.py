@@ -1,7 +1,8 @@
 import json
 import os
 import re
-from datetime import datetime
+import shutil
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import yaml
@@ -63,3 +64,36 @@ def slugify(text: str) -> str:
     text = re.sub(r"[^a-z0-9\-\s]", "", text)
     text = re.sub(r"\s+", "-", text)
     return text[:60].strip("-") or "item"
+
+
+def cleanup_old_data(max_age_days: int = 7) -> None:
+    """Remove date-stamped data directories older than *max_age_days*.
+
+    Scans data/raw, data/processed, data/digests, and data/articles for
+    subdirectories named YYYY-MM-DD and deletes those older than the
+    cutoff.  Non-date directories and special files (latest.json, etc.)
+    are left untouched.
+    """
+    cutoff = datetime.now().date() - timedelta(days=max_age_days)
+    dirs_to_scan = [
+        DATA_DIR / "raw",
+        DATA_DIR / "processed",
+        DATA_DIR / "digests",
+        DATA_DIR / "articles",
+    ]
+    removed = 0
+    for parent in dirs_to_scan:
+        if not parent.is_dir():
+            continue
+        for child in parent.iterdir():
+            if not child.is_dir():
+                continue
+            try:
+                folder_date = datetime.strptime(child.name, "%Y-%m-%d").date()
+            except ValueError:
+                continue  # not a date folder
+            if folder_date < cutoff:
+                shutil.rmtree(child)
+                removed += 1
+    if removed:
+        print(f"[cleanup] Removed {removed} data folder(s) older than {max_age_days} days")

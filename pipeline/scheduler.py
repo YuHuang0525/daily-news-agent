@@ -5,7 +5,7 @@ import pytz
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from pipeline.utils import DATA_DIR, today_date_str, load_sources, slugify
+from pipeline.utils import DATA_DIR, today_date_str, load_sources, slugify, cleanup_old_data
 
 _scheduler = None
 _lock = threading.Lock()
@@ -41,6 +41,12 @@ def _sources_missing_raw_data() -> list[str]:
 
 
 def _run_pipeline():
+    # Clean up old data first to free disk/memory before the new run
+    try:
+        cleanup_old_data(max_age_days=7)
+    except Exception as e:
+        print(f"[scheduler] Cleanup error (non-fatal): {e}")
+
     if _pipeline_already_ran_today():
         missing = _sources_missing_raw_data()
         if missing:

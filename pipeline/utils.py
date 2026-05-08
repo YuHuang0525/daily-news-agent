@@ -66,7 +66,7 @@ def slugify(text: str) -> str:
     return text[:60].strip("-") or "item"
 
 
-def cleanup_old_data(max_age_days: int = 7) -> None:
+def cleanup_old_data(max_age_days: int = 7) -> int:
     """Remove date-stamped data directories older than *max_age_days*.
 
     Scans data/raw, data/processed, data/digests, and data/articles for
@@ -74,7 +74,7 @@ def cleanup_old_data(max_age_days: int = 7) -> None:
     cutoff.  Non-date directories and special files (latest.json, etc.)
     are left untouched.
     """
-    cutoff = datetime.now().date() - timedelta(days=max_age_days)
+    cutoff = now_in_timezone().date() - timedelta(days=max_age_days)
     dirs_to_scan = [
         DATA_DIR / "raw",
         DATA_DIR / "processed",
@@ -97,3 +97,52 @@ def cleanup_old_data(max_age_days: int = 7) -> None:
                 removed += 1
     if removed:
         print(f"[cleanup] Removed {removed} data folder(s) older than {max_age_days} days")
+    else:
+        print(f"[cleanup] No data folders older than {max_age_days} days")
+    return removed
+
+
+def current_rss_mb() -> float | None:
+    """Return current process RSS in MB on Linux, otherwise None."""
+    status_path = Path("/proc/self/status")
+    if not status_path.exists():
+        return None
+    try:
+        for line in status_path.read_text(encoding="utf-8").splitlines():
+            if line.startswith("VmRSS:"):
+                parts = line.split()
+                if len(parts) >= 2:
+                    return int(parts[1]) / 1024
+    except Exception:
+        return None
+    return None
+
+
+def compact_runtime_memory(label: str = "runtime") -> None:
+    """Force Python GC and ask glibc to return free heap pages to the OS."""
+    import gc
+
+    before = current_rss_mb()
+    collected = gc.collect()
+    trim_result = None
+
+    if os.name == "posix":
+        try:
+            import ctypes
+
+            libc = ctypes.CDLL("libc.so.6")
+            trim_result = libc.malloc_trim(0)
+        except Exception:
+            trim_result = None
+
+    after = current_rss_mb()
+    if before is not None and after is not None:
+        print(
+            f"[memory] {label}: rss {before:.1f} MB -> {after:.1f} MB; "
+            f"gc_collected={collected}; malloc_trim={trim_result}"
+        )
+    else:
+        print(
+            f"[memory] {label}: gc_collected={collected}; "
+            f"malloc_trim={trim_result}; rss=unavailable"
+        )

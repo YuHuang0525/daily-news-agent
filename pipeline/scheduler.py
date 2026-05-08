@@ -1,11 +1,23 @@
+import os
+import shlex
+import subprocess
+import sys
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytz
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 
-from pipeline.utils import DATA_DIR, today_date_str, load_sources, slugify, cleanup_old_data
+from pipeline.utils import (
+    DATA_DIR,
+    compact_runtime_memory,
+    cleanup_old_data,
+    load_sources,
+    slugify,
+    today_date_str,
+)
 
 _scheduler = None
 _lock = threading.Lock()
@@ -40,33 +52,73 @@ def _sources_missing_raw_data() -> list[str]:
     return missing
 
 
-def _run_pipeline():
-    # Clean up old data first to free disk/memory before the new run
+def _data_retention_days() -> int:
     try:
-        cleanup_old_data(max_age_days=7)
+        return max(0, int(os.getenv("DATA_RETENTION_DAYS", "7")))
+    except ValueError:
+        return 7
+
+
+def _maintenance_interval_hours() -> int:
+    try:
+        return max(0, int(os.getenv("MAINTENANCE_INTERVAL_HOURS", "6")))
+    except ValueError:
+        return 6
+
+
+def _run_pipeline_subprocess(retry_sources: list[str] | None = None) -> None:
+    command = [sys.executable, "-m", "pipeline.run_daily"]
+    for source_name in retry_sources or []:
+        command.extend(["--retry-source", source_name])
+
+    printable_command = " ".join(shlex.quote(part) for part in command)
+    print(f"[scheduler] Launching pipeline subprocess: {printable_command}")
+
+    env = os.environ.copy()
+    env["PYTHONUNBUFFERED"] = "1"
+    result = subprocess.run(command, cwd=str(DATA_DIR.parent), env=env)
+    if result.returncode != 0:
+        raise RuntimeError(f"pipeline subprocess exited with code {result.returncode}")
+
+
+def _run_maintenance():
+    try:
+        cleanup_old_data(max_age_days=_data_retention_days())
+    except Exception as e:
+        print(f"[scheduler] Cleanup error (non-fatal): {e}")
+    finally:
+        compact_runtime_memory("scheduler maintenance")
+
+
+def _run_pipeline():
+    # Clean up old data first; the pipeline itself runs out-of-process so its
+    # heap is returned to the OS when the child exits.
+    try:
+        cleanup_old_data(max_age_days=_data_retention_days())
     except Exception as e:
         print(f"[scheduler] Cleanup error (non-fatal): {e}")
 
-    if _pipeline_already_ran_today():
-        missing = _sources_missing_raw_data()
-        if missing:
-            print(f"[scheduler] Digest exists but sources missing data: {missing} — retrying...")
-            try:
-                from pipeline.run_daily import run_retry_sources
-                run_retry_sources(missing)
-                print(f"[scheduler] Retry complete for: {missing}")
-            except Exception as e:
-                print(f"[scheduler] Retry error: {e}")
-        else:
-            print("[scheduler] Today's digest already exists — skipping.")
-        return
     try:
+        if _pipeline_already_ran_today():
+            missing = _sources_missing_raw_data()
+            if missing:
+                print(f"[scheduler] Digest exists but sources missing data: {missing} - retrying...")
+                try:
+                    _run_pipeline_subprocess(retry_sources=missing)
+                    print(f"[scheduler] Retry complete for: {missing}")
+                except Exception as e:
+                    print(f"[scheduler] Retry error: {e}")
+            else:
+                print("[scheduler] Today's digest already exists - skipping.")
+            return
+
         print("[scheduler] Starting daily pipeline...")
-        from pipeline.run_daily import run
-        run()
+        _run_pipeline_subprocess()
         print("[scheduler] Daily pipeline complete.")
     except Exception as e:
         print(f"[scheduler] Pipeline error: {e}")
+    finally:
+        compact_runtime_memory("scheduler after pipeline")
 
 
 def start_scheduler():
@@ -85,6 +137,22 @@ def start_scheduler():
             id="daily_pipeline",
             replace_existing=True,
             next_run_time=datetime.now(pytz.utc),  # also run immediately on startup
+            max_instances=1,
+            coalesce=True,
         )
+        maintenance_hours = _maintenance_interval_hours()
+        if maintenance_hours > 0:
+            _scheduler.add_job(
+                _run_maintenance,
+                IntervalTrigger(hours=maintenance_hours, timezone=pytz.utc),
+                id="runtime_maintenance",
+                replace_existing=True,
+                next_run_time=datetime.now(pytz.utc) + timedelta(minutes=30),
+                max_instances=1,
+                coalesce=True,
+            )
         _scheduler.start()
-        print("[scheduler] Started — pipeline running now, then daily at 15:00 UTC (7:00 AM PST)")
+        print(
+            "[scheduler] Started - pipeline running now, then daily at 15:00 UTC "
+            "(8:00 AM PDT / 7:00 AM PST)"
+        )

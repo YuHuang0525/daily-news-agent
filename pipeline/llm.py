@@ -52,11 +52,14 @@ def summarize_bilingual(text: str) -> Dict[str, str]:
         }
 
     client = OpenAI(api_key=api_key)
-    response = client.chat.completions.create(
-        model=get_default_model(),
-        messages=[{"role": "user", "content": build_prompt(text)}],
-        temperature=0.2,
-    )
+    try:
+        response = client.chat.completions.create(
+            model=get_default_model(),
+            messages=[{"role": "user", "content": build_prompt(text)}],
+            temperature=0.2,
+        )
+    finally:
+        client.close()
     output_text = response.choices[0].message.content or ""
     parsed = parse_json_block(output_text)
     if parsed:
@@ -89,11 +92,14 @@ def analyze_intent(text: str) -> Dict[str, str]:
         }
 
     client = OpenAI(api_key=api_key)
-    response = client.chat.completions.create(
-        model=get_default_model(),
-        messages=[{"role": "user", "content": build_intent_prompt(text)}],
-        temperature=0.3,
-    )
+    try:
+        response = client.chat.completions.create(
+            model=get_default_model(),
+            messages=[{"role": "user", "content": build_intent_prompt(text)}],
+            temperature=0.3,
+        )
+    finally:
+        client.close()
     output_text = response.choices[0].message.content or ""
     parsed = parse_json_block(output_text)
     if parsed:

@@ -233,5 +233,24 @@ def run_retry_sources(source_names: list[str]):
     asyncio.run(run_retry_sources_async(source_names))
 
 
+def main(argv: list[str] | None = None):
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Run the daily news pipeline.")
+    parser.add_argument(
+        "--retry-source",
+        action="append",
+        dest="retry_sources",
+        default=[],
+        help="Retry one source by name. Can be passed more than once.",
+    )
+    args = parser.parse_args(argv)
+
+    if args.retry_sources:
+        run_retry_sources(args.retry_sources)
+    else:
+        run()
+
+
 if __name__ == "__main__":
-    run()
+    main()

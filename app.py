@@ -339,24 +339,26 @@ def chat():
         try:
             import openai
 
-            client = openai.OpenAI(api_key=openai_key)
-
             def _call_openai(msgs: list, token_limit: int = 500, temperature: float = 0.7) -> str:
-                if model.startswith("gpt-5"):
-                    resp = client.chat.completions.create(
-                        model=model,
-                        messages=msgs,
-                        temperature=temperature,
-                        extra_body={"max_completion_tokens": token_limit},
-                    )
-                else:
-                    resp = client.chat.completions.create(
-                        model=model,
-                        messages=msgs,
-                        max_tokens=token_limit,
-                        temperature=temperature,
-                    )
-                return resp.choices[0].message.content or ""
+                client = openai.OpenAI(api_key=openai_key)
+                try:
+                    if model.startswith("gpt-5"):
+                        resp = client.chat.completions.create(
+                            model=model,
+                            messages=msgs,
+                            temperature=temperature,
+                            extra_body={"max_completion_tokens": token_limit},
+                        )
+                    else:
+                        resp = client.chat.completions.create(
+                            model=model,
+                            messages=msgs,
+                            max_tokens=token_limit,
+                            temperature=temperature,
+                        )
+                    return resp.choices[0].message.content or ""
+                finally:
+                    client.close()
 
             # ------------------------------------------------------------------
             # Pass 1: Router – decide if we need to fetch the full article
